@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/net/proxy"
@@ -77,7 +78,13 @@ func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret 
 		return 0
 	}
 	proxyUsed := proxyAddrs[rand.Intn(len(proxyAddrs))]
-	err = syscall.Connect(int(fd), proxyUsed.SockAddr)
+	var errCh = make(chan error, 1)
+	go func() { errCh <- syscall.Connect(int(fd), proxyUsed.SockAddr) }()
+	select {
+	case <-time.After(connectTimeouts):
+		err = syscall.ETIMEDOUT
+	case err = <-errCh:
+	}
 	if err != nil {
 		log.Printf("connect to %v using proxy %v failed: %v",
 			dialAddr, proxyUsed.AddrStr, err)
