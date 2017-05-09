@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -18,14 +20,17 @@ import (
 
 func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags | log.Lmicroseconds)
+	envNoLog := os.Getenv("proxy_no_log") // false
+	config.SetNoLog(envNoLog[strings.Index(envNoLog, "=")+1:])
 	rand.Seed(time.Now().UnixNano())
-	log.Println("proxy init", os.Args)
+	log.Println("libsocks5connect loaded", os.Args)
 	envProxy := os.Getenv("socks5_proxy")               // user:pass@192.168.1.1:1080,user:pass@192.168.1.2:1080
 	envNotProxies := os.Getenv("not_proxy")             // 127.0.0.0/8,192.168.1.0/24
 	envConnectTimeouts := os.Getenv("proxy_timeout_ms") // 1000
 	config.SetProxyAddrs(strings.Split(envProxy[strings.Index(envProxy, "=")+1:], ","))
 	config.SetNoProxies(strings.Split(envNotProxies[strings.Index(envNotProxies, "=")+1:], ","))
 	config.SetConnectTimeouts(envConnectTimeouts[strings.Index(envConnectTimeouts, "=")+1:])
+	go config.Listen()
 }
 
 func main() {
@@ -38,6 +43,18 @@ type Config struct {
 	notProxies      []*net.IPNet
 	connectTimeouts time.Duration
 	proxyAddrs      []ProxyAddr
+	proxyNoLog      bool
+}
+
+func (p *Config) String() string {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return fmt.Sprintf("%v=%v\n%v=%v\n%v=%v\n%v=%v\n",
+		"proxy_no_log", p.IsProxyNoLog(),
+		"socks5_proxy", strings.Join(p.GetProxyAddrs(), ","),
+		"not_proxy", strings.Join(p.GetNoProxies(), ","),
+		"proxy_timeout_ms", uint64(p.GetConnectTimeouts()/time.Millisecond),
+	)
 }
 
 type ProxyAddr struct {
@@ -114,6 +131,14 @@ func (p *Config) GetProxyAddr() ProxyAddr {
 	defer p.lock.RUnlock()
 	return p.proxyAddrs[rand.Intn(len(p.proxyAddrs))]
 }
+func (p *Config) GetProxyAddrs() (addrs []string) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	for _, addr := range p.proxyAddrs {
+		addrs = append(addrs, addr.AddrStr)
+	}
+	return
+}
 
 func (p *Config) SetConnectTimeouts(timeout string) {
 	p.lock.Lock()
@@ -129,6 +154,24 @@ func (p *Config) GetConnectTimeouts() time.Duration {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
 	return p.connectTimeouts
+}
+
+func (p *Config) SetNoLog(isNoLog string) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	isNoLog = strings.ToLower(strings.TrimSpace(isNoLog))
+	if isNoLog == "true" || isNoLog == "1" {
+		log.SetOutput(ioutil.Discard)
+		p.proxyNoLog = true
+	} else {
+		log.SetOutput(os.Stderr)
+		p.proxyNoLog = false
+	}
+}
+func (p *Config) IsProxyNoLog() bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.proxyNoLog
 }
 
 func (p *Config) ShouldNotProxy(ip net.IP) bool {
@@ -157,5 +200,66 @@ func (p *Config) SetNoProxies(addrs []string) {
 		}
 		log.Println("add not proxy addr:", addr)
 		p.notProxies = append(p.notProxies, ipnet)
+	}
+}
+
+func (p *Config) GetNoProxies() (addrs []string) {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	for _, addr := range p.notProxies {
+		addrs = append(addrs, addr.String())
+	}
+	return
+}
+
+func (p *Config) Listen() {
+	time.Sleep(time.Second * 10)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		log.Println("listen failed", err)
+		return
+	}
+	log.Println("config server running at:", ln.Addr())
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			log.Println("Accept failed", err)
+		}
+		go p.UpdateConfigFromConn(conn)
+	}
+}
+
+func (p *Config) UpdateConfigFromConn(conn net.Conn) {
+	fmt.Fprintf(conn, "current config:\n%v\n\n", p)
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		sp := strings.SplitN(scanner.Text(), "=", 2)
+		if len(sp) < 2 {
+			log.Println("invalid config", scanner.Text())
+			fmt.Fprintf(conn, "invalid config %#v\n", scanner.Text())
+			fmt.Fprintf(conn, "current config:\n%v\n\n", p)
+			continue
+		}
+		switch sp[0] {
+		case "socks5_proxy", "export socks5_proxy":
+			config.SetProxyAddrs(strings.Split(sp[1], ","))
+			fmt.Fprintf(conn, "OK, current proxyaddrs: %v\n",
+				strings.Join(config.GetProxyAddrs(), ","))
+		case "not_proxy", "export not_proxy":
+			config.SetNoProxies(strings.Split(sp[1], ","))
+			fmt.Fprintf(conn, "OK, current no proxy addrs: %v\n",
+				strings.Join(config.GetNoProxies(), ","))
+		case "proxy_timeout_ms", "export proxy_timeout_ms":
+			config.SetConnectTimeouts(sp[1])
+			fmt.Fprintf(conn, "OK, current proxy timeouts: %v\n",
+				uint64(p.GetConnectTimeouts()/time.Millisecond))
+		case "proxy_no_log", "export proxy_no_log":
+			config.SetNoLog(sp[1])
+			fmt.Fprintf(conn, "OK, debug log closed\n")
+		default:
+			log.Println("unknown config")
+			fmt.Fprintf(conn, "unknown config %#v\n", scanner.Text())
+			fmt.Fprintf(conn, "current config:\n%v\n\n", p)
+		}
 	}
 }
