@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -22,77 +23,118 @@ func init() {
 	envProxy := os.Getenv("socks5_proxy")               // user:pass@192.168.1.1:1080,user:pass@192.168.1.2:1080
 	envNotProxies := os.Getenv("not_proxy")             // 127.0.0.0/8,192.168.1.0/24
 	envConnectTimeouts := os.Getenv("proxy_timeout_ms") // 1000
-	initPorxyAddrs(strings.Split(envProxy[strings.Index(envProxy, "=")+1:], ","))
-	initNotProxies(strings.Split(envNotProxies[strings.Index(envNotProxies, "=")+1:], ","))
-	initConnectTimeouts(envConnectTimeouts[strings.Index(envConnectTimeouts, "=")+1:])
+	config.SetProxyAddrs(strings.Split(envProxy[strings.Index(envProxy, "=")+1:], ","))
+	config.SetNoProxies(strings.Split(envNotProxies[strings.Index(envNotProxies, "=")+1:], ","))
+	config.SetConnectTimeouts(envConnectTimeouts[strings.Index(envConnectTimeouts, "=")+1:])
 }
 
 func main() {
 }
 
-type proxyAddr struct {
-	AddrStr  string
-	Auth     proxy.Auth
-	SockAddr syscall.Sockaddr
+var config = &Config{}
+
+type Config struct {
+	lock            sync.RWMutex
+	notProxies      []*net.IPNet
+	connectTimeouts time.Duration
+	proxyAddrs      []ProxyAddr
 }
 
-var connectTimeouts time.Duration
+type ProxyAddr struct {
+	proxy.Auth
+	AddrStr      string
+	ResolvedAddr *net.TCPAddr
+}
 
-func initConnectTimeouts(timeout string) {
-	t, err := strconv.Atoi(strings.TrimSpace(timeout))
+func (p ProxyAddr) Sockaddr() (addr syscall.Sockaddr) {
+	naddr, err := net.ResolveTCPAddr("tcp", p.AddrStr)
 	if err != nil {
-		t = 3000
+		log.Println("resolve proxy addr failed", p.AddrStr, err, "use saved addr:", p.ResolvedAddr)
+		naddr = p.ResolvedAddr
+	} else {
+		p.ResolvedAddr = naddr
 	}
-	connectTimeouts = time.Duration(t) * time.Millisecond
-	log.Println("set connect timeout", connectTimeouts)
+	if ip4 := naddr.IP.To4(); ip4 != nil {
+		var proxyIp4 [4]byte
+		copy(proxyIp4[:], ip4)
+		return &syscall.SockaddrInet4{
+			Addr: proxyIp4,
+			Port: naddr.Port,
+		}
+	} else if ip6 := naddr.IP.To16(); ip6 != nil {
+		log.Println("not support ipv6 proxy addr", p.AddrStr, p.ResolvedAddr)
+	}
+	return
 }
 
-var proxyAddrs []*proxyAddr
+func (p ProxyAddr) String() string {
+	if p.AddrStr == p.ResolvedAddr.String() {
+		return p.AddrStr
+	}
+	return fmt.Sprintf("%v(%v)", p.AddrStr, p.ResolvedAddr.IP)
+}
 
-func initPorxyAddrs(proxies []string) {
-	for _, ipAddr := range proxies {
+func (p *Config) SetProxyAddrs(addrs []string) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	for _, ipAddr := range addrs {
+		var proxyAddr ProxyAddr
 		u, err := url.Parse("socks5://" + strings.TrimSpace(ipAddr))
 		if err != nil {
 			log.Println("parse proxy addr failed", ipAddr, err)
 			continue
 		}
-		var auth proxy.Auth
 		if u.User != nil {
-			auth.User = u.User.Username()
-			auth.Password, _ = u.User.Password()
+			proxyAddr.User = u.User.Username()
+			proxyAddr.Password, _ = u.User.Password()
 		}
-		naddr, err := net.ResolveTCPAddr("tcp", ipAddr)
-		if err != nil {
-			log.Println("resolve proxy addr failed", ipAddr, err)
+		naddr, err := net.ResolveTCPAddr("tcp", u.Host)
+		if err != nil || naddr.IP.To4() == nil {
+			log.Println("resolve proxy addr failed", ipAddr, err, naddr.IP)
 			continue
 		}
-		if naddr.IP.To4() == nil {
-			continue
-		}
-		if naddr.String() != ipAddr {
-			ipAddr = fmt.Sprintf("%s(%s)", ipAddr, naddr.String())
-		}
+		proxyAddr.AddrStr = u.Host
+		proxyAddr.ResolvedAddr = naddr
 		log.Println("add proxy:", ipAddr)
-		var proxyIp4 [4]byte
-		copy(proxyIp4[:], naddr.IP.To4())
-		proxyAddrs = append(proxyAddrs, &proxyAddr{
-			Auth:    auth,
-			AddrStr: ipAddr,
-			SockAddr: &syscall.SockaddrInet4{
-				Addr: proxyIp4,
-				Port: naddr.Port,
-			},
-		})
+		p.proxyAddrs = append(p.proxyAddrs, proxyAddr)
 	}
-	if len(proxyAddrs) == 0 {
+	if len(p.proxyAddrs) == 0 {
 		log.Println("no proxy available")
 	}
 }
 
-type NotProxies []*net.IPNet
+func (p *Config) GetProxyCount() int {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return len(p.proxyAddrs)
+}
 
-func (p NotProxies) Contains(ip net.IP) bool {
-	for _, ipnet := range p {
+func (p *Config) GetProxyAddr() ProxyAddr {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.proxyAddrs[rand.Intn(len(p.proxyAddrs))]
+}
+
+func (p *Config) SetConnectTimeouts(timeout string) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	t, err := strconv.Atoi(strings.TrimSpace(timeout))
+	if err != nil {
+		t = 3000
+	}
+	p.connectTimeouts = time.Duration(t) * time.Millisecond
+	log.Println("set connect timeout to", p.connectTimeouts)
+}
+func (p *Config) GetConnectTimeouts() time.Duration {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	return p.connectTimeouts
+}
+
+func (p *Config) ShouldNotProxy(ip net.IP) bool {
+	p.lock.RLock()
+	defer p.lock.RUnlock()
+	for _, ipnet := range p.notProxies {
 		if ipnet.Contains(ip) {
 			return true
 		}
@@ -100,9 +142,9 @@ func (p NotProxies) Contains(ip net.IP) bool {
 	return false
 }
 
-var notProxies NotProxies
-
-func initNotProxies(addrs []string) {
+func (p *Config) SetNoProxies(addrs []string) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 	for _, addr := range addrs {
 		addr = strings.TrimSpace(addr)
 		if len(addr) == 0 {
@@ -114,6 +156,6 @@ func initNotProxies(addrs []string) {
 			continue
 		}
 		log.Println("add not proxy addr:", addr)
-		notProxies = append(notProxies, ipnet)
+		p.notProxies = append(p.notProxies, ipnet)
 	}
 }

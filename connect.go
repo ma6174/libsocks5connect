@@ -10,7 +10,6 @@ import "C"
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
 	"syscall"
 	"time"
@@ -68,7 +67,7 @@ func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret 
 		log.Println("syscall.GetsockoptInt failed", err)
 		return C.setErrno(errno(err))
 	}
-	if opt == syscall.SOCK_DGRAM || len(proxyAddrs) == 0 || notProxies.Contains(net.IP(ip)) {
+	if opt == syscall.SOCK_DGRAM || config.GetProxyCount() == 0 || config.ShouldNotProxy(net.IP(ip)) {
 		err = syscall.Connect(int(fd), sockAddr)
 		if err != nil {
 			log.Printf("direct connect to %v failed %v", dialAddr, err)
@@ -77,29 +76,41 @@ func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret 
 		log.Printf("direct connect to %v success", dialAddr)
 		return 0
 	}
-	proxyUsed := proxyAddrs[rand.Intn(len(proxyAddrs))]
+	proxyUsed := config.GetProxyAddr()
+	conn := NewFdConn(int(fd))
+	defer conn.Close()
 	var errCh = make(chan error, 1)
-	go func() { errCh <- syscall.Connect(int(fd), proxyUsed.SockAddr) }()
+	go func() {
+		err := syscall.Connect(int(fd), proxyUsed.Sockaddr())
+		if err != nil {
+			log.Println("syscall.Connect failed", err)
+			errCh <- err
+			return
+		}
+		dialer, err := proxy.SOCKS5("", "", &proxyUsed.Auth, conn)
+		if err != nil {
+			log.Println("proxy.SOCKS5 failed", err)
+			errCh <- err
+			return
+		}
+		_, err = dialer.Dial("tcp", dialAddr)
+		if err != nil {
+			log.Printf("dialer Dial %v failed: %v", dialAddr, err)
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
 	select {
-	case <-time.After(connectTimeouts):
+	case <-time.After(config.GetConnectTimeouts()):
 		err = syscall.ETIMEDOUT
 	case err = <-errCh:
 	}
 	if err != nil {
 		log.Printf("connect to %v using proxy %v failed: %v",
-			dialAddr, proxyUsed.AddrStr, err)
+			dialAddr, proxyUsed, err)
 		return C.setErrno(errno(err))
 	}
-	dialer, err := proxy.SOCKS5("", "", &proxyUsed.Auth, fdConn(fd))
-	if err != nil {
-		log.Println("proxy.SOCKS5 failed", err)
-		return C.setErrno(errno(err))
-	}
-	_, err = dialer.Dial("tcp", dialAddr)
-	if err != nil {
-		log.Printf("dialer Dial %v failed: %v", dialAddr, err)
-		return C.setErrno(errno(err))
-	}
-	log.Printf("connect to %v using proxy %v success", dialAddr, proxyUsed.AddrStr)
+	log.Printf("connect to %v using proxy %v success", dialAddr, proxyUsed)
 	return 0
 }
