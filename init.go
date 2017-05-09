@@ -18,12 +18,14 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+var version string
+
 func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags | log.Lmicroseconds)
 	envNoLog := os.Getenv("proxy_no_log") // false
 	config.SetNoLog(envNoLog[strings.Index(envNoLog, "=")+1:])
 	rand.Seed(time.Now().UnixNano())
-	log.Println("libsocks5connect loaded", os.Args)
+	log.Println("libsocks5connect loaded, version:", version)
 	envProxy := os.Getenv("socks5_proxy")               // user:pass@192.168.1.1:1080,user:pass@192.168.1.2:1080
 	envNotProxies := os.Getenv("not_proxy")             // 127.0.0.0/8,192.168.1.0/24
 	envConnectTimeouts := os.Getenv("proxy_timeout_ms") // 1000
@@ -49,7 +51,8 @@ type Config struct {
 func (p *Config) String() string {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	return fmt.Sprintf("%v=%v\n%v=%v\n%v=%v\n%v=%v\n",
+	return fmt.Sprintf("%v: %v\n%v=%v\n%v=%v\n%v=%v\n%v=%v\n",
+		"version", version,
 		"proxy_no_log", p.IsProxyNoLog(),
 		"socks5_proxy", strings.Join(p.GetProxyAddrs(), ","),
 		"not_proxy", strings.Join(p.GetNoProxies(), ","),
