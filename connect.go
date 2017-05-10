@@ -67,50 +67,59 @@ func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret 
 		log.Println("syscall.GetsockoptInt failed", err)
 		return C.setErrno(errno(err))
 	}
-	if opt == syscall.SOCK_DGRAM || config.GetProxyCount() == 0 || config.ShouldNotProxy(net.IP(ip)) {
-		err = syscall.Connect(int(fd), sockAddr)
-		if err != nil {
-			log.Printf("direct connect to %v failed %v", dialAddr, err)
-			return C.setErrno(errno(err))
-		}
-		log.Printf("direct connect to %v success", dialAddr)
-		return 0
-	}
-	proxyUsed := config.GetProxyAddr()
-	conn := NewFdConn(int(fd))
-	defer conn.Close()
 	var errCh = make(chan error, 1)
-	go func() {
-		err := syscall.Connect(int(fd), proxyUsed.Sockaddr())
-		if err != nil {
-			log.Println("syscall.Connect failed", err)
-			errCh <- err
-			return
-		}
-		dialer, err := proxy.SOCKS5("", "", &proxyUsed.Auth, conn)
-		if err != nil {
-			log.Println("proxy.SOCKS5 failed", err)
-			errCh <- err
-			return
-		}
-		_, err = dialer.Dial("tcp", dialAddr)
-		if err != nil {
-			log.Printf("dialer Dial %v failed: %v", dialAddr, err)
-			errCh <- err
-			return
-		}
-		errCh <- nil
-	}()
+	var proxyUsed *ProxyAddr
+	if opt == syscall.SOCK_DGRAM || config.GetProxyCount() == 0 || config.ShouldNotProxy(net.IP(ip)) {
+		go func() {
+			err := syscall.Connect(int(fd), sockAddr)
+			if err != nil {
+				log.Println("syscall.Connect failed", err)
+				errCh <- err
+				return
+			}
+			log.Printf("direct connect to %v success", dialAddr)
+			errCh <- nil
+		}()
+	} else {
+		proxyUsed = config.GetProxyAddr()
+		conn := NewFdConn(int(fd))
+		defer conn.Close()
+		go func() {
+			err := syscall.Connect(int(fd), proxyUsed.Sockaddr())
+			if err != nil {
+				log.Println("syscall.Connect failed", err)
+				errCh <- err
+				return
+			}
+			dialer, err := proxy.SOCKS5("", "", &proxyUsed.Auth, conn)
+			if err != nil {
+				log.Println("proxy.SOCKS5 failed", err)
+				errCh <- err
+				return
+			}
+			_, err = dialer.Dial("tcp", dialAddr)
+			if err != nil {
+				log.Printf("dialer Dial %v failed: %v", dialAddr, err)
+				errCh <- err
+				return
+			}
+			log.Printf("connect to %v using proxy %v success", dialAddr, proxyUsed)
+			errCh <- nil
+		}()
+	}
 	select {
 	case <-time.After(config.GetConnectTimeouts()):
 		err = syscall.ETIMEDOUT
 	case err = <-errCh:
 	}
 	if err != nil {
-		log.Printf("connect to %v using proxy %v failed: %v",
-			dialAddr, proxyUsed, err)
+		if proxyUsed == nil {
+			log.Printf("direct connect to %v failed %v", dialAddr, err)
+		} else {
+			log.Printf("connect to %v using proxy %v failed: %v",
+				dialAddr, proxyUsed, err)
+		}
 		return C.setErrno(errno(err))
 	}
-	log.Printf("connect to %v using proxy %v success", dialAddr, proxyUsed)
 	return 0
 }

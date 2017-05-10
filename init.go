@@ -91,7 +91,7 @@ func (p ProxyAddr) String() string {
 	if p.AddrStr == p.ResolvedAddr.String() {
 		return p.AddrStr
 	}
-	return fmt.Sprintf("%v(%v)", p.AddrStr, p.ResolvedAddr.IP)
+	return fmt.Sprintf("%v(%v)", p.AddrStr, p.ResolvedAddr)
 }
 
 func (p *Config) SetProxyAddrs(addrs []string) {
@@ -129,10 +129,11 @@ func (p *Config) GetProxyCount() int {
 	return len(p.proxyAddrs)
 }
 
-func (p *Config) GetProxyAddr() ProxyAddr {
+func (p *Config) GetProxyAddr() *ProxyAddr {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
-	return p.proxyAddrs[rand.Intn(len(p.proxyAddrs))]
+	tmpAddr := p.proxyAddrs[rand.Intn(len(p.proxyAddrs))]
+	return &tmpAddr
 }
 func (p *Config) GetProxyAddrs() (addrs []string) {
 	p.lock.RLock()
@@ -227,6 +228,7 @@ func (p *Config) Listen() {
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Println("Accept failed", err)
+			continue
 		}
 		go p.UpdateConfigFromConn(conn)
 	}
@@ -258,7 +260,8 @@ func (p *Config) UpdateConfigFromConn(conn net.Conn) {
 				uint64(p.GetConnectTimeouts()/time.Millisecond))
 		case "proxy_no_log", "export proxy_no_log":
 			config.SetNoLog(sp[1])
-			fmt.Fprintf(conn, "OK, debug log closed\n")
+			fmt.Fprintf(conn, "OK, proxy_no_log: %v\n",
+				config.IsProxyNoLog())
 		default:
 			log.Println("unknown config")
 			fmt.Fprintf(conn, "unknown config %#v\n", scanner.Text())
