@@ -2,9 +2,16 @@ package main
 
 /*
 #include <netinet/in.h>
+#include <dlfcn.h>
 int connect_proxy(int fd, const struct sockaddr * addr, socklen_t sockLen);
 int connect(int fd, const struct sockaddr *addr, socklen_t len) {
 	return connect_proxy(fd, addr, len);
+}
+#undef RTLD_NEXT
+#define RTLD_NEXT	((void *) -1l)
+int orig_connect(int socket, const struct sockaddr *address, socklen_t address_len){
+	int (*original_connect) (int socket, const struct sockaddr *address, socklen_t address_len) = dlsym(RTLD_NEXT, "connect");
+	return original_connect(socket,address,address_len);
 }
 */
 import "C"

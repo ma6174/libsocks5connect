@@ -223,7 +223,6 @@ func (p *Config) Listen() {
 		log.Println("listen failed", err)
 		return
 	}
-	log.Println("config server running at:", ln.Addr())
 	for {
 		conn, err := ln.Accept()
 		if err != nil {

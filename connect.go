@@ -1,11 +1,15 @@
 package main
 
-//#include <arpa/inet.h>
-//#include <errno.h>
-//static inline int setErrno(int err) {
-//     errno = err;
-//     return -1;
-//}
+/*
+#cgo LDFLAGS: -ldl -s -w
+#include <arpa/inet.h>
+#include <errno.h>
+static inline int setErrno(int err) {
+     errno = err;
+     return -1;
+}
+int orig_connect(int socket, const struct sockaddr *address, socklen_t address_len);
+*/
 import "C"
 import (
 	"fmt"
@@ -55,8 +59,13 @@ func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret 
 			Port:   port,
 			ZoneId: addr6.Scope_id,
 		}
+	default:
+		log.Printf("unknown addr Family: %+v, direct connect", goAddr)
 	}
 	dialAddr := net.IP(ip).String() + ":" + fmt.Sprint(port)
+	if sockAddr == nil {
+		dialAddr = fmt.Sprintf("%+v", addr)
+	}
 	err := syscall.SetNonblock(int(fd), false)
 	if err != nil {
 		log.Println("err", err)
@@ -69,16 +78,17 @@ func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret 
 	}
 	var errCh = make(chan error, 1)
 	var proxyUsed *ProxyAddr
-	if opt == syscall.SOCK_DGRAM || config.GetProxyCount() == 0 || config.ShouldNotProxy(net.IP(ip)) {
+	if opt == syscall.SOCK_DGRAM || config.GetProxyCount() == 0 || config.ShouldNotProxy(net.IP(ip)) || sockAddr == nil {
 		go func() {
-			err := syscall.Connect(int(fd), sockAddr)
-			if err != nil {
-				log.Println("syscall.Connect failed", err)
-				errCh <- err
+			ret = C.orig_connect(fd, addr, sockLen)
+			if ret == 0 {
+				log.Printf("direct connect to %v success", dialAddr)
+				errCh <- nil
 				return
 			}
-			log.Printf("direct connect to %v success", dialAddr)
-			errCh <- nil
+			err := syscall.Errno(ret)
+			log.Println("connect failed", err)
+			errCh <- err
 		}()
 	} else {
 		proxyUsed = config.GetProxyAddr()
