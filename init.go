@@ -235,12 +235,14 @@ func (p *Config) Listen() {
 }
 
 func (p *Config) UpdateConfigFromConn(conn net.Conn) {
+	defer conn.Close()
+	log.Println("config server new connection from:", conn.RemoteAddr())
 	fmt.Fprintf(conn, "current config:\n%v\n\n", p)
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
 		sp := strings.SplitN(scanner.Text(), "=", 2)
 		if len(sp) < 2 {
-			log.Println("invalid config", scanner.Text())
+			log.Println("invalid config")
 			fmt.Fprintf(conn, "invalid config %#v\n", scanner.Text())
 			fmt.Fprintf(conn, "current config:\n%v\n\n", p)
 			continue
