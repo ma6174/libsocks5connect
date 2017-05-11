@@ -21,18 +21,28 @@ import (
 var version string
 
 func init() {
-	log.SetFlags(log.Lshortfile | log.LstdFlags | log.Lmicroseconds)
+	rand.Seed(time.Now().UnixNano())
+
 	envNoLog := os.Getenv("proxy_no_log") // false
 	config.SetNoLog(envNoLog[strings.Index(envNoLog, "=")+1:])
-	rand.Seed(time.Now().UnixNano())
+	log.SetFlags(log.Lshortfile | log.LstdFlags | log.Lmicroseconds)
 	log.Println("libsocks5connect loaded, version:", version)
-	envProxy := os.Getenv("socks5_proxy")               // user:pass@192.168.1.1:1080,user:pass@192.168.1.2:1080
-	envNotProxies := os.Getenv("not_proxy")             // 127.0.0.0/8,192.168.1.0/24
-	envConnectTimeouts := os.Getenv("proxy_timeout_ms") // 1000
+
+	envProxy := os.Getenv("socks5_proxy") // user:pass@192.168.1.1:1080,user:pass@192.168.1.2:1080
 	config.SetProxyAddrs(strings.Split(envProxy[strings.Index(envProxy, "=")+1:], ","))
+
+	envNotProxies := os.Getenv("not_proxy") // 127.0.0.0/8,192.168.1.0/24
 	config.SetNoProxies(strings.Split(envNotProxies[strings.Index(envNotProxies, "=")+1:], ","))
+
+	envConnectTimeouts := os.Getenv("proxy_timeout_ms") // 1000
 	config.SetConnectTimeouts(envConnectTimeouts[strings.Index(envConnectTimeouts, "=")+1:])
-	go config.Listen()
+
+	envNoConfigServer := os.Getenv("no_config_server") // false
+	envNoConfigServer = strings.ToLower(strings.TrimSpace(
+		envNoConfigServer[strings.Index(envNoConfigServer, "=")+1:]))
+	if envNoConfigServer != "true" && envNoConfigServer != "1" {
+		go config.Listen()
+	}
 }
 
 func main() {
