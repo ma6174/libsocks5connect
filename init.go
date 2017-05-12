@@ -108,6 +108,10 @@ func (p *Config) SetProxyAddrs(addrs []string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	for _, ipAddr := range addrs {
+		ipAddr = strings.TrimSpace(ipAddr)
+		if len(ipAddr) == 0 {
+			continue
+		}
 		var proxyAddr ProxyAddr
 		u, err := url.Parse("socks5://" + strings.TrimSpace(ipAddr))
 		if err != nil {
