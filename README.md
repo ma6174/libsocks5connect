@@ -3,9 +3,7 @@
 ### install
 
 ```
-go get golang.org/x/net/proxy
-git clone https://github.com/ma6174/libsocks5connect.git && cd libsocks5connect
-make
+git clone https://github.com/ma6174/libsocks5connect.git && cd libsocks5connect && make
 ```
 
 ### config
