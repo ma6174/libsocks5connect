@@ -5,3 +5,9 @@ all:
 clean:
 	rm libsocks5connect.so
 	rm libsocks5connect.h
+
+update-dep:
+	go get -v github.com/Masterminds/glide
+	go get github.com/sgotti/glide-vc
+	glide update
+	glide vc

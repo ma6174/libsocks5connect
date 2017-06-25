@@ -1,0 +1,5 @@
+package: github.com/ma6174/libsocks5connect
+import:
+- package: golang.org/x/net
+  subpackages:
+  - proxy
