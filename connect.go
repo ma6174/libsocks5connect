@@ -31,11 +31,12 @@ func errno(err error) C.int {
 }
 
 //export connect_proxy
-func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret C.int) {
+func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret C.int) {
 	var (
 		ip       []byte
 		port     int
 		sockAddr syscall.Sockaddr
+		fd       = int(fdc)
 	)
 	var dialAddr string
 	goAddr := (*syscall.RawSockaddr)(unsafe.Pointer(addr))
@@ -74,25 +75,27 @@ func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret 
 		}
 		dialAddr = fmt.Sprintf("%v", string(b))
 	default:
-		return C.orig_connect(fd, addr, sockLen)
+		return C.orig_connect(fdc, addr, sockLen)
 	}
-	err := syscall.SetNonblock(int(fd), false)
+	err := syscall.SetNonblock(fd, false)
 	if err != nil {
 		log.Println("err", err)
 		return C.setErrno(errno(err))
 	}
-	opt, err := syscall.GetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_TYPE)
+	opt, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TYPE)
 	if err != nil {
 		log.Println("syscall.GetsockoptInt failed", err)
 		return C.setErrno(errno(err))
 	}
 	var errCh = make(chan error, 1)
 	var proxyUsed *ProxyAddr
+	conn := NewFdConn(fd)
+	defer conn.Close()
 	if opt != syscall.SOCK_STREAM || config.GetProxyCount() == 0 || config.ShouldNotProxy(net.IP(ip)) || sockAddr == nil {
 		go func() {
-			ret := C.orig_connect(fd, addr, sockLen)
+			ret := C.orig_connect(fdc, addr, sockLen)
 			if ret == 0 {
-				log.Printf("direct connect to %v success", dialAddr)
+				log.Printf("direct connect success: %v -> %v", conn.LocalAddr(), dialAddr)
 				errCh <- nil
 				return
 			}
@@ -101,10 +104,8 @@ func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret 
 		}()
 	} else {
 		proxyUsed = config.GetProxyAddr()
-		conn := NewFdConn(int(fd))
-		defer conn.Close()
 		go func() {
-			err := syscall.Connect(int(fd), proxyUsed.Sockaddr())
+			err := syscall.Connect(fd, proxyUsed.Sockaddr())
 			if err != nil {
 				log.Println("syscall.Connect failed:", err)
 				errCh <- err
@@ -122,7 +123,7 @@ func connect_proxy(fd C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret 
 				errCh <- err
 				return
 			}
-			log.Printf("connect to %v using proxy %v success", dialAddr, proxyUsed)
+			log.Printf("proxy connect success: %v -> %v -> %v", conn.LocalAddr(), proxyUsed, dialAddr)
 			errCh <- nil
 		}()
 	}

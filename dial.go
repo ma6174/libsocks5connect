@@ -68,6 +68,17 @@ func (s *fdConn) Close() (err error) {
 	return
 }
 func (s *fdConn) LocalAddr() net.Addr {
+	sa, _ := syscall.Getsockname(s.fd)
+	switch sa := sa.(type) {
+	case *syscall.SockaddrInet4:
+		return &net.TCPAddr{IP: sa.Addr[0:], Port: sa.Port}
+	case *syscall.SockaddrInet6:
+		return &net.TCPAddr{
+			IP:   sa.Addr[0:],
+			Port: sa.Port,
+			// Zone: zoneToString(int(sa.ZoneId)),
+		}
+	}
 	return nil
 }
 func (s *fdConn) RemoteAddr() net.Addr {
