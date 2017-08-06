@@ -19,4 +19,6 @@ export libsocks5connect=./libsocks5connect.so
 
 ### use
 
+```
 ./proxy.sh -f proxy.conf python2 -c 'import urllib2;print(urllib2.urlopen("http://google.com").read())'
+```
