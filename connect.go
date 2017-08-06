@@ -6,8 +6,11 @@ package main
 #include <arpa/inet.h>
 #include <errno.h>
 static inline int setErrno(int err) {
-     errno = err;
-     return -1;
+	if (err == 0) {
+		return 0;
+	}
+	errno = err;
+	return -1;
 }
 int orig_connect(int socket, const struct sockaddr *address, socklen_t address_len);
 */
@@ -24,6 +27,9 @@ import (
 )
 
 func errno(err error) C.int {
+	if err == nil {
+		return 0
+	}
 	if errno, ok := err.(syscall.Errno); ok {
 		return C.int(errno)
 	}
@@ -64,27 +70,27 @@ func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret
 			ZoneId: addr6.Scope_id,
 		}
 		dialAddr = net.IP(ip).String() + ":" + fmt.Sprint(port)
-	case syscall.AF_UNIX:
-		addrLocal := (*syscall.RawSockaddrUnix)(unsafe.Pointer(addr))
-		var b []byte
-		for _, v := range addrLocal.Path {
-			if v == 0 {
-				break
-			}
-			b = append(b, byte(v))
-		}
-		dialAddr = fmt.Sprintf("%v", string(b))
+	// case syscall.AF_UNIX:
+	// addrLocal := (*syscall.RawSockaddrUnix)(unsafe.Pointer(addr))
+	// var b []byte
+	// for _, v := range addrLocal.Path {
+	// if v == 0 {
+	// break
+	// }
+	// b = append(b, byte(v))
+	// }
+	// dialAddr = fmt.Sprintf("%v", string(b))
 	default:
 		return C.orig_connect(fdc, addr, sockLen)
 	}
 	err := syscall.SetNonblock(fd, false)
 	if err != nil {
-		log.Println("err", err)
+		log.Printf("[fd:%v] syscall.SetNonblock failed: %v", fd, err)
 		return C.setErrno(errno(err))
 	}
 	opt, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TYPE)
 	if err != nil {
-		log.Println("syscall.GetsockoptInt failed", err)
+		log.Printf("[fd:%v] syscall.GetsockoptInt failed: %v", fd, err)
 		return C.setErrno(errno(err))
 	}
 	var errCh = make(chan error, 1)
@@ -95,7 +101,7 @@ func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret
 		go func() {
 			ret := C.orig_connect(fdc, addr, sockLen)
 			if ret == 0 {
-				log.Printf("direct connect success: %v -> %v", conn.LocalAddr(), dialAddr)
+				log.Printf("[fd:%v] direct connect success: %v -> %v", fd, conn.LocalAddr(), dialAddr)
 				errCh <- nil
 				return
 			}
@@ -107,23 +113,23 @@ func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret
 		go func() {
 			err := syscall.Connect(fd, proxyUsed.Sockaddr())
 			if err != nil {
-				log.Println("syscall.Connect failed:", err)
+				log.Printf("[fd:%v] syscall.Connect failed: %v", fd, err)
 				errCh <- err
 				return
 			}
 			dialer, err := proxy.SOCKS5("", "", &proxyUsed.Auth, conn)
 			if err != nil {
-				log.Println("proxy.SOCKS5 failed:", err)
+				log.Printf("[fd:%v] proxy.SOCKS5 failed: %v", fd, err)
 				errCh <- err
 				return
 			}
 			_, err = dialer.Dial("tcp", dialAddr)
 			if err != nil {
-				log.Printf("dialer Dial %v failed: %v", dialAddr, err)
+				log.Printf("[fd:%v] dialer Dial %v failed: %v", fd, dialAddr, err)
 				errCh <- err
 				return
 			}
-			log.Printf("proxy connect success: %v -> %v -> %v", conn.LocalAddr(), proxyUsed, dialAddr)
+			log.Printf("[fd:%v] proxy connect success: %v -> %v -> %v", fd, conn.LocalAddr(), proxyUsed, dialAddr)
 			errCh <- nil
 		}()
 	}
@@ -134,12 +140,21 @@ func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret
 	}
 	if err != nil {
 		if proxyUsed == nil {
-			log.Printf("direct connect to %v failed %v", dialAddr, err)
+			log.Printf("[fd:%v] direct connect to %v failed %v", fd, dialAddr, err)
 		} else {
-			log.Printf("connect to %v using proxy %v failed: %v",
-				dialAddr, proxyUsed, err)
+			log.Printf("[fd:%v] connect to %v using proxy %v failed: %v",
+				fd, dialAddr, proxyUsed, err)
 		}
 		return C.setErrno(errno(err))
 	}
 	return 0
+}
+
+//export close
+func close(fdc C.int) C.int {
+	fd := int(fdc)
+	if opt, _ := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TYPE); opt == syscall.SOCK_STREAM {
+		log.Printf("[fd:%v] close conn %v", fd, NewFdConn(fd).LocalAddr())
+	}
+	return C.setErrno(errno(syscall.Close(fd)))
 }
