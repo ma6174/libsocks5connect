@@ -154,7 +154,8 @@ func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret
 func close(fdc C.int) C.int {
 	fd := int(fdc)
 	if opt, _ := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TYPE); opt == syscall.SOCK_STREAM {
-		log.Printf("[fd:%v] close conn %v", fd, NewFdConn(fd).LocalAddr())
+		conn := NewFdConn(fd)
+		log.Printf("[fd:%v] close conn %v -> %v", fd, conn.LocalAddr(), conn.RemoteAddr())
 	}
 	return C.setErrno(errno(syscall.Close(fd)))
 }

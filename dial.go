@@ -69,6 +69,10 @@ func (s *fdConn) Close() (err error) {
 }
 func (s *fdConn) LocalAddr() net.Addr {
 	sa, _ := syscall.Getsockname(s.fd)
+	return netAddr(sa)
+}
+
+func netAddr(sa syscall.Sockaddr) net.Addr {
 	switch sa := sa.(type) {
 	case *syscall.SockaddrInet4:
 		return &net.TCPAddr{IP: sa.Addr[0:], Port: sa.Port}
@@ -81,8 +85,10 @@ func (s *fdConn) LocalAddr() net.Addr {
 	}
 	return nil
 }
+
 func (s *fdConn) RemoteAddr() net.Addr {
-	return nil
+	sa, _ := syscall.Getpeername(s.fd)
+	return netAddr(sa)
 }
 func (s *fdConn) SetDeadline(t time.Time) error {
 	return nil
