@@ -159,3 +159,15 @@ func close(fdc C.int) C.int {
 	}
 	return C.setErrno(errno(syscall.Close(fd)))
 }
+
+//export accept
+func accept(fdc C.int, addr *C.struct_sockaddr, sockLen *C.socklen_t) C.int {
+	newFD, _, errno := syscall.Syscall(syscall.SYS_ACCEPT, uintptr(fdc),
+		uintptr(unsafe.Pointer(addr)), uintptr(unsafe.Pointer(sockLen)))
+	if errno != 0 {
+		return C.setErrno(C.int(errno))
+	}
+	conn := NewFdConn(int(newFD))
+	log.Printf("[fd:%v] accept conn %v -> %v", newFD, conn.LocalAddr(), conn.RemoteAddr())
+	return C.int(newFD)
+}
