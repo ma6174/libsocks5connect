@@ -16,7 +16,6 @@ int orig_connect(int socket, const struct sockaddr *address, socklen_t address_l
 */
 import "C"
 import (
-	"fmt"
 	"log"
 	"net"
 	"syscall"
@@ -38,50 +37,26 @@ func errno(err error) C.int {
 
 //export connect_proxy
 func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret C.int) {
-	var (
-		ip       []byte
-		port     int
-		sockAddr syscall.Sockaddr
-		fd       = int(fdc)
-	)
-	var dialAddr string
+	fd := int(fdc)
+	var dialAddr *net.TCPAddr
 	goAddr := (*syscall.RawSockaddr)(unsafe.Pointer(addr))
 	switch goAddr.Family {
 	case syscall.AF_INET:
 		addr4 := (*syscall.RawSockaddrInet4)(unsafe.Pointer(addr))
-		port = int(addr4.Port<<8 | addr4.Port>>8)
-		ip = addr4.Addr[:]
-		var ip4 [4]byte
-		copy(ip4[:], ip)
-		sockAddr = &syscall.SockaddrInet4{
-			Addr: ip4,
-			Port: port,
+		dialAddr = &net.TCPAddr{
+			IP:   addr4.Addr[:],
+			Port: int(addr4.Port<<8 | addr4.Port>>8),
 		}
-		dialAddr = net.IP(ip).String() + ":" + fmt.Sprint(port)
 	case syscall.AF_INET6:
 		addr6 := (*syscall.RawSockaddrInet6)(unsafe.Pointer(addr))
-		ip = addr6.Addr[:]
-		port = int(addr6.Port<<8 | addr6.Port>>8)
-		var ip6 [16]byte
-		copy(ip6[:], ip)
-		sockAddr = &syscall.SockaddrInet6{
-			Addr:   ip6,
-			Port:   port,
-			ZoneId: addr6.Scope_id,
+		dialAddr = &net.TCPAddr{
+			IP:   addr6.Addr[:],
+			Port: int(addr6.Port<<8 | addr6.Port>>8),
 		}
-		dialAddr = net.IP(ip).String() + ":" + fmt.Sprint(port)
-	// case syscall.AF_UNIX:
-	// addrLocal := (*syscall.RawSockaddrUnix)(unsafe.Pointer(addr))
-	// var b []byte
-	// for _, v := range addrLocal.Path {
-	// if v == 0 {
-	// break
-	// }
-	// b = append(b, byte(v))
-	// }
-	// dialAddr = fmt.Sprintf("%v", string(b))
 	default:
-		return C.orig_connect(fdc, addr, sockLen)
+		_, _, ret := syscall.Syscall(syscall.SYS_CONNECT, uintptr(fdc),
+			uintptr(unsafe.Pointer(addr)), uintptr(sockLen))
+		return C.setErrno(C.int(ret))
 	}
 	err := syscall.SetNonblock(fd, false)
 	if err != nil {
@@ -97,9 +72,10 @@ func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret
 	var proxyUsed *ProxyAddr
 	conn := NewFdConn(fd)
 	defer conn.Close()
-	if opt != syscall.SOCK_STREAM || config.GetProxyCount() == 0 || config.ShouldNotProxy(net.IP(ip)) || sockAddr == nil {
+	if opt != syscall.SOCK_STREAM || config.GetProxyCount() == 0 || config.ShouldNotProxy(dialAddr.IP) {
 		go func() {
-			ret := C.orig_connect(fdc, addr, sockLen)
+			_, _, ret := syscall.Syscall(syscall.SYS_CONNECT, uintptr(fdc),
+				uintptr(unsafe.Pointer(addr)), uintptr(sockLen))
 			if ret == 0 {
 				log.Printf("[fd:%v] direct connect success: %v -> %v", fd, conn.LocalAddr(), dialAddr)
 				errCh <- nil
@@ -123,7 +99,7 @@ func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret
 				errCh <- err
 				return
 			}
-			_, err = dialer.Dial("tcp", dialAddr)
+			_, err = dialer.Dial("tcp", dialAddr.String())
 			if err != nil {
 				log.Printf("[fd:%v] dialer Dial %v failed: %v", fd, dialAddr, err)
 				errCh <- err
