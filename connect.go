@@ -1,7 +1,6 @@
 package main
 
 /*
-#cgo LDFLAGS: -ldl -s -w
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <errno.h>
@@ -12,7 +11,6 @@ static inline int setErrno(int err) {
 	errno = err;
 	return -1;
 }
-int orig_connect(int socket, const struct sockaddr *address, socklen_t address_len);
 */
 import "C"
 import (
