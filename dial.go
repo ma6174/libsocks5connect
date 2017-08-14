@@ -3,7 +3,7 @@ package main
 /*
 #include <sys/types.h>
 #include <sys/socket.h>
-int connect_proxy(int fd, const struct sockaddr * addr, socklen_t sockLen);
+int connect_proxy(int fd, const struct sockaddr *addr, socklen_t len);
 int connect(int fd, const struct sockaddr *addr, socklen_t len) {
 	return connect_proxy(fd, addr, len);
 }
