@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export socks5_proxy=127.0.0.1:7070
+export socks5_proxy=127.0.0.1:7070,127.0.0.1:1080
 export not_proxy=127.0.0.0/8
 export proxy_timeout_ms=1000
 export proxy_no_log=false

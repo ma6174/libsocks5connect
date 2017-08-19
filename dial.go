@@ -70,12 +70,6 @@ func netAddr(sa syscall.Sockaddr) net.Addr {
 	switch sa := sa.(type) {
 	case *syscall.SockaddrInet4:
 		return &net.TCPAddr{IP: sa.Addr[0:], Port: sa.Port}
-	case *syscall.SockaddrInet6:
-		return &net.TCPAddr{
-			IP:   sa.Addr[0:],
-			Port: sa.Port,
-			// Zone: zoneToString(int(sa.ZoneId)),
-		}
 	}
 	return nil
 }
