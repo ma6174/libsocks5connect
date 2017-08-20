@@ -14,10 +14,8 @@ update-dep:
 
 runSocks5Server:
 	go build socks5server/server.go
-	nohup ./server &
+	./server &
 
 test: all runSocks5Server
-	sleep 0.1
-	./proxy.sh -f proxy_test.conf python2 -c 'import urllib2;print(len(urllib2.urlopen("http://golang.org").read()))'
-	cat nohup.out
 	go test -v -tags test -cover
+	./proxy.sh -f proxy_test.conf python2 -c 'import urllib2;print(len(urllib2.urlopen("http://golang.org").read()))'

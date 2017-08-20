@@ -1,5 +1,7 @@
 # libsocks5connect
 
+[![Build Status](https://travis-ci.org/ma6174/libsocks5connect.svg?branch=master)](https://travis-ci.org/ma6174/libsocks5connect)
+
 ### install
 
 ```
