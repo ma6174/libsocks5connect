@@ -61,11 +61,16 @@ func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret
 		log.Printf("[fd:%v] syscall.SetNonblock failed: %v", fd, err)
 		return C.setErrno(errno(err))
 	}
+	opt, err := syscall.GetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TYPE)
+	if err != nil {
+		log.Printf("[fd:%v] syscall.GetsockoptInt failed: %v", fd, err)
+		return C.setErrno(errno(err))
+	}
 	var errCh = make(chan error, 1)
 	var proxyUsed *ProxyAddr
 	conn := NewFdConn(fd)
 	defer conn.Close()
-	if config.GetProxyCount() == 0 || config.ShouldNotProxy(dialAddr.IP) {
+	if opt != syscall.SOCK_STREAM || config.GetProxyCount() == 0 || config.ShouldNotProxy(dialAddr.IP) {
 		go func() {
 			err := syscall.Connect(fd, sockAddr)
 			if err == nil {
