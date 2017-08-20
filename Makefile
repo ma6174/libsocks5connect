@@ -19,3 +19,4 @@ runSocks5Server:
 test: all runSocks5Server
 	go test -v -tags test -cover
 	./proxy.sh -f proxy_test.conf python2 -c 'import urllib2;print(len(urllib2.urlopen("http://golang.org").read()))'
+	./proxy.sh -f proxy_test.conf curl -I -L http://golang.org

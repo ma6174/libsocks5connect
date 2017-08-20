@@ -1,5 +1,6 @@
 language: go
 sudo: false
+services: mongodb
 go:
    - 1.6
    - 1.7
@@ -8,3 +9,4 @@ go:
 
 script:
   - make test
+  - ./proxy.sh -f proxy_test.conf mongo --quiet --eval 'printjson(db.version())'
