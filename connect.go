@@ -68,6 +68,9 @@ func connect_proxy(fdc C.int, addr *C.struct_sockaddr, sockLen C.socklen_t) (ret
 	if config.GetProxyCount() == 0 || config.ShouldNotProxy(dialAddr.IP) {
 		go func() {
 			err := syscall.Connect(fd, sockAddr)
+			if err == nil {
+				log.Printf("[fd:%v] direct connect success: %v -> %v", fd, conn.LocalAddr(), dialAddr)
+			}
 			errCh <- err
 		}()
 	} else {

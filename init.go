@@ -18,7 +18,7 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-var version string
+var version, configAddr string
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -231,12 +231,12 @@ func (p *Config) GetNoProxies() (addrs []string) {
 }
 
 func (p *Config) Listen() {
-	time.Sleep(time.Second * 10)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
 		log.Println("listen failed", err)
 		return
 	}
+	configAddr = ln.Addr().String()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {

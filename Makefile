@@ -11,3 +11,11 @@ update-dep:
 	go get github.com/sgotti/glide-vc
 	glide update
 	glide vc
+
+runSocks5Server:
+	go build socks5server/server.go
+	./server &
+
+test: all runSocks5Server
+	go test -v -tags test -cover
+	./proxy.sh -f proxy_test.conf python2 -c 'import urllib2;print(len(urllib2.urlopen("http://golang.org").read()))'
