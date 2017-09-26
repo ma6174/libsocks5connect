@@ -107,6 +107,7 @@ func (p ProxyAddr) String() string {
 func (p *Config) SetProxyAddrs(addrs []string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	var proxyAddrs []ProxyAddr
 	for _, ipAddr := range addrs {
 		ipAddr = strings.TrimSpace(ipAddr)
 		if len(ipAddr) == 0 {
@@ -130,11 +131,13 @@ func (p *Config) SetProxyAddrs(addrs []string) {
 		proxyAddr.AddrStr = u.Host
 		proxyAddr.ResolvedAddr = naddr
 		log.Println("add proxy:", ipAddr)
-		p.proxyAddrs = append(p.proxyAddrs, proxyAddr)
+		proxyAddrs = append(proxyAddrs, proxyAddr)
 	}
-	if len(p.proxyAddrs) == 0 {
+	if len(proxyAddrs) == 0 {
 		log.Println("no proxy available")
+		return
 	}
+	p.proxyAddrs = proxyAddrs
 }
 
 func (p *Config) GetProxyCount() int {
