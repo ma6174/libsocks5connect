@@ -27,6 +27,7 @@ func init() {
 	config.SetNoLog(envNoLog[strings.Index(envNoLog, "=")+1:])
 	log.SetFlags(log.Lshortfile | log.LstdFlags | log.Lmicroseconds)
 	log.Println("libsocks5connect loaded, version:", version)
+	log.Println("args:", os.Args, "pid", os.Getpid())
 
 	envProxy := os.Getenv("socks5_proxy") // user:pass@192.168.1.1:1080,user:pass@192.168.1.2:1080
 	config.SetProxyAddrs(strings.Split(envProxy[strings.Index(envProxy, "=")+1:], ","))
