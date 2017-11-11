@@ -234,7 +234,7 @@ func (p *Config) GetNoProxies() (addrs []string) {
 }
 
 func (p *Config) Listen() {
-	ln, err := net.Listen("tcp", ":0")
+	ln, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		log.Println("listen failed", err)
 		return
