@@ -2,3 +2,5 @@ libsocks5connect.h
 libsocks5connect.so
 server
 nohup.out
+cmd/socks5proxy/bin.go
+cmd/socks5proxy/socks5proxy
