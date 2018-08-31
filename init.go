@@ -23,6 +23,7 @@ var version, configAddr string
 func init() {
 	rand.Seed(time.Now().UnixNano())
 
+	log.Println("env:======", os.Environ())
 	envNoLog := os.Getenv("proxy_no_log") // false
 	config.SetNoLog(envNoLog[strings.Index(envNoLog, "=")+1:])
 	log.SetFlags(log.Lshortfile | log.LstdFlags | log.Lmicroseconds)
@@ -134,7 +135,7 @@ func (p *Config) SetProxyAddrs(addrs []string) {
 		proxyAddrs = append(proxyAddrs, proxyAddr)
 	}
 	if len(proxyAddrs) == 0 {
-		log.Println("no proxy available")
+		log.Panic("no proxy available")
 		return
 	}
 	p.proxyAddrs = proxyAddrs
