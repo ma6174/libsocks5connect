@@ -23,6 +23,7 @@ export proxy_timeout_ms:=1000
 export proxy_no_log:=false
 
 test: all runSocks5Server
+	ls -lh libsocks5connect.so cmd/socks5proxy/socks5proxy
 	go test -v -tags test -cover
 	./proxy.sh -f proxy_test.conf python2 -c 'import urllib2;print(len(urllib2.urlopen("http://golang.org").read()))'
 	./proxy.sh -f proxy_test.conf curl -I -L http://golang.org
