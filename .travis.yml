@@ -2,9 +2,12 @@ language: go
 sudo: false
 services: mongodb
 go:
-   - 1.6
-   - 1.7
-   - 1.8
+   - 1.6.x
+   - 1.7.x
+   - 1.8.x
+   - 1.9.x
+   - 1.10.x
+   - 1.11.x
    - tip
 
 script:
