@@ -23,7 +23,6 @@ var version, configAddr string
 func init() {
 	rand.Seed(time.Now().UnixNano())
 
-	log.Println("env:======", os.Environ())
 	envNoLog := os.Getenv("proxy_no_log") // false
 	config.SetNoLog(envNoLog[strings.Index(envNoLog, "=")+1:])
 	log.SetFlags(log.Lshortfile | log.LstdFlags | log.Lmicroseconds)
