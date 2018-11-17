@@ -133,11 +133,9 @@ func (p *Config) SetProxyAddrs(addrs []string) {
 		log.Println("add proxy:", ipAddr)
 		proxyAddrs = append(proxyAddrs, proxyAddr)
 	}
-	if len(proxyAddrs) == 0 {
-		log.Panic("no proxy available")
-		return
+	if len(proxyAddrs) != 0 {
+		p.proxyAddrs = proxyAddrs
 	}
-	p.proxyAddrs = proxyAddrs
 }
 
 func (p *Config) GetProxyCount() int {
@@ -152,6 +150,7 @@ func (p *Config) GetProxyAddr() *ProxyAddr {
 	tmpAddr := p.proxyAddrs[rand.Intn(len(p.proxyAddrs))]
 	return &tmpAddr
 }
+
 func (p *Config) GetProxyAddrs() (addrs []string) {
 	p.lock.RLock()
 	defer p.lock.RUnlock()
@@ -209,6 +208,7 @@ func (p *Config) ShouldNotProxy(ip net.IP) bool {
 func (p *Config) SetNoProxies(addrs []string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	var notProxies []*net.IPNet
 	for _, addr := range addrs {
 		addr = strings.TrimSpace(addr)
 		if len(addr) == 0 {
@@ -220,7 +220,10 @@ func (p *Config) SetNoProxies(addrs []string) {
 			continue
 		}
 		log.Println("add not proxy addr:", addr)
-		p.notProxies = append(p.notProxies, ipnet)
+		notProxies = append(notProxies, ipnet)
+	}
+	if len(notProxies) != 0 {
+		p.notProxies = notProxies
 	}
 }
 

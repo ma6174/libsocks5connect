@@ -37,6 +37,11 @@ func TestInit(t *testing.T) {
 	time.Sleep(time.Millisecond * 10)
 	r.True(config.ShouldNotProxy(net.IP{192, 168, 1, 100}))
 	r.False(config.ShouldNotProxy(net.IP{192, 168, 2, 100}))
+	_, err = fmt.Fprintln(conn, "not_proxy=192.168.1.0/24,192.168.2.0/24")
+	r.NoError(err)
+	time.Sleep(time.Millisecond * 10)
+	r.Equal(1, strings.Count(config.String(), "192.168.1.0/24"))
+	r.Equal(1, strings.Count(config.String(), "192.168.2.0/24"))
 
 	_, err = fmt.Fprintln(conn, "socks5_proxy=192.168.111.111:1000")
 	r.NoError(err)
